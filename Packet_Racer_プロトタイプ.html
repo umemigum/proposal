@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PACKET RACER v1.0 (Refined)</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        :root {
+            --neon-cyan: #00f3ff;
+            --neon-green: #0aff0a;
+            --neon-red: #ff0055;
+            --neon-purple: #bc13fe;
+            --bg-color: #050510;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--neon-cyan);
+            font-family: 'Share Tech Mono', monospace;
+            overflow: hidden;
+            touch-action: none;
+            user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* --- UI Layers --- */
+        .ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex; flex-direction: column;
+            justify-content: space-between;
+            padding: 20px; box-sizing: border-box;
+            z-index: 10;
+        }
+
+        /* HUD */
+        .hud-top {
+            display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        
+        .panel {
+            background: rgba(0, 10, 20, 0.8);
+            border: 1px solid var(--neon-cyan);
+            padding: 10px 20px;
+            transform: skewX(-10deg);
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+        }
+
+        .panel-label {
+            font-size: 10px; color: #888; letter-spacing: 2px;
+            transform: skewX(10deg); /* Counter skew */
+        }
+        .panel-value {
+            font-size: 24px; font-weight: bold; color: #fff;
+            transform: skewX(10deg);
+        }
+
+        .rank-badge {
+            font-size: 48px; font-weight: bold;
+            text-shadow: 0 0 15px currentColor;
+        }
+        .rank-1 { color: var(--neon-green); }
+        .rank-2 { color: var(--neon-red); }
+
+        /* Boost Bar */
+        .boost-container {
+            width: 300px; height: 20px;
+            background: #111;
+            border: 2px solid var(--neon-purple);
+            transform: skewX(-20deg);
+            overflow: hidden;
+            position: relative;
+            margin: 0 auto;
+        }
+        .boost-fill {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, #8800ff, #ff00ff);
+            box-shadow: 0 0 10px #ff00ff;
+            transition: width 0.1s linear;
+        }
+        .boost-text {
+            position: absolute; width: 100%; text-align: center;
+            top: 0; line-height: 20px; font-size: 12px; color: #fff;
+            text-shadow: 0 0 2px #000;
+            transform: skewX(20deg);
+        }
+
+        /* Messages */
+        .center-msg {
+            position: absolute; top: 30%; left: 0; width: 100%;
+            text-align: center;
+            font-size: 64px; font-weight: bold;
+            text-shadow: 0 0 20px rgba(0,0,0,0.8);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s, transform 0.2s;
+        }
+        .msg-loss { color: var(--neon-red); text-shadow: 0 0 20px var(--neon-red); }
+        .msg-go { color: var(--neon-green); text-shadow: 0 0 20px var(--neon-green); }
+
+        /* Screens */
+        .screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 10, 0.95);
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 100;
+            transition: opacity 0.3s;
+        }
+        .hidden { opacity: 0; pointer-events: none; display: none; }
+
+        h1 { font-size: 64px; margin: 0; color: var(--neon-cyan); text-shadow: 0 0 20px var(--neon-cyan); }
+        p { color: #aaa; max-width: 600px; text-align: center; line-height: 1.6; }
+
+        button {
+            background: transparent; color: var(--neon-cyan);
+            border: 2px solid var(--neon-cyan);
+            padding: 15px 50px; font-size: 20px;
+            font-family: inherit; cursor: pointer;
+            margin-top: 30px;
+            transition: 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        button:hover {
+            background: var(--neon-cyan); color: #000;
+            box-shadow: 0 0 30px var(--neon-cyan);
+        }
+
+        /* Scan Viz */
+        .scan-bars {
+            display: flex; gap: 20px; width: 100%; max-width: 600px; margin-top: 30px;
+        }
+        .scan-col { flex: 1; border: 1px solid #333; padding: 10px; background: rgba(0,0,0,0.5); }
+        .bar-bg { width: 100%; height: 8px; background: #333; margin-top: 5px; }
+        .bar-fg { height: 100%; background: var(--neon-green); width: 0%; transition: width 0.2s; }
+
+        /* Touch Controls */
+        #mobile-controls {
+            display: none; /* Auto-enabled via JS */
+            position: absolute; bottom: 0; width: 100%; height: 100%;
+            z-index: 50;
+        }
+        .t-left, .t-right { position: absolute; bottom: 0; width: 50%; height: 100%; }
+        .t-left { left: 0; }
+        .t-right { right: 0; }
+        .t-boost {
+            position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%);
+            width: 100px; height: 100px; border-radius: 50%;
+            background: rgba(188, 19, 254, 0.2); border: 2px solid var(--neon-purple);
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-weight: bold; pointer-events: auto;
+            backdrop-filter: blur(5px);
+        }
+        .t-boost:active { background: var(--neon-purple); }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="canvas"></canvas>
+
+    <!-- HUD -->
+    <div id="gameUI" class="ui-layer hidden">
+        <div class="hud-top">
+            <div class="panel">
+                <div class="panel-label">SPEED (Mbps)</div>
+                <div class="panel-value" id="uiSpeed">0</div>
+            </div>
+            
+            <div class="text-center">
+                <div id="uiRank" class="rank-badge rank-1">1st</div>
+                <div style="font-size:12px; color:#aaa;">OPPONENT: <span id="uiOppDist">0</span>m</div>
+            </div>
+
+            <div class="panel" style="text-align:right;">
+                <div class="panel-label">DISTANCE</div>
+                <div class="panel-value"><span id="uiDist">0</span>m</div>
+            </div>
+        </div>
+
+        <div id="msgBox" class="center-msg"></div>
+
+        <div style="margin-top:auto;">
+            <div class="boost-container">
+                <div id="uiBoost" class="boost-fill"></div>
+                <div class="boost-text">UPLOAD BOOST [SPACE / TAP]</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Title Screen -->
+    <div id="titleScreen" class="screen">
+        <h1>PACKET RACER</h1>
+        <div style="color:var(--neon-green); font-size:18px; margin-bottom:20px; letter-spacing:4px;">REFACTORED ENGINE v1.2</div>
+        <p>
+            実回線速度がマシンのスペックになる。<br>
+            パケットロス（赤い箱）を回避し、ゲートウェイまでパケットを配送せよ。<br>
+            <br>
+            [操作]<br>
+            PC: 矢印キー(左右) / スペース(ブースト)<br>
+            Mobile: 画面左右タップ / 中央ボタン(ブースト)
+        </p>
+        <button onclick="app.initScan(true)">CONNECT [HIGH SPEED SIM]</button>
+        <button onclick="app.initScan(false)" style="font-size:14px; padding:10px 30px; border-color:#555; color:#888;">CONNECT [LOW SPEED SIM]</button>
+    </div>
+
+    <!-- Scan Screen -->
+    <div id="scanScreen" class="screen hidden">
+        <h2>NETWORK DIAGNOSIS</h2>
+        <div class="scan-bars">
+            <div class="scan-col">
+                <div style="font-size:12px; color:#888;">LATENCY (PING)</div>
+                <div id="valPing" style="font-size:20px; font-weight:bold;">--</div>
+                <div class="bar-bg"><div id="barPing" class="bar-fg"></div></div>
+            </div>
+            <div class="scan-col">
+                <div style="font-size:12px; color:#888;">DOWNLOAD</div>
+                <div id="valDown" style="font-size:20px; font-weight:bold;">--</div>
+                <div class="bar-bg"><div id="barDown" class="bar-fg"></div></div>
+            </div>
+            <div class="scan-col">
+                <div style="font-size:12px; color:#888;">UPLOAD</div>
+                <div id="valUp" style="font-size:20px; font-weight:bold;">--</div>
+                <div class="bar-bg"><div id="barUp" class="bar-fg"></div></div>
+            </div>
+        </div>
+        <div id="scanStatus" style="margin-top:20px; color:var(--neon-cyan); animation: blink 1s infinite;">ESTABLISHING LINK...</div>
+    </div>
+
+    <!-- Result Screen -->
+    <div id="resultScreen" class="screen hidden">
+        <h1 id="resTitle">FINISHED</h1>
+        <div id="resRankText" style="font-size:40px; color:#fff; margin:20px 0;">RANK: 1st</div>
+        <div style="border:1px solid #333; padding:20px; background:rgba(0,0,0,0.5); width:300px;">
+            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                <span style="color:#888;">TIME</span>
+                <span id="resTime" style="color:#fff;">00:00.00</span>
+            </div>
+            <div style="display:flex; justify-content:space-between;">
+                <span style="color:#888;">AVG SPEED</span>
+                <span id="resSpeed" style="color:#fff;">000 Mbps</span>
+            </div>
+        </div>
+        <button onclick="location.reload()">RE-ESTABLISH</button>
+    </div>
+
+    <!-- Mobile Touch Overlay -->
+    <div id="mobile-controls">
+        <div class="t-left" id="btnLeft"></div>
+        <div class="t-right" id="btnRight"></div>
+        <div class="t-boost" id="btnBoost">BOOST</div>
+    </div>
+</div>
+
+<script>
+/**
+ * PACKET RACER v1.0 (Refined Engine)
+ * - Pseudo-3D Raster Road Engine (OutRun style)
+ * - Improved Physics & Game Feel
+ */
+
+// --- Constants ---
+const ROAD_WIDTH = 2000;
+const SEGMENT_LENGTH = 200;
+const RENDER_DISTANCE = 300; // Segments to draw
+const FOV = 100;
+const CAMERA_HEIGHT = 1000; // Camera height from player ground
+const CAMERA_DEPTH = 1 / Math.tan((FOV / 2) * Math.PI / 180);
+const COLORS = {
+    sky: '#050510',
+    roadDark: '#0a0a10',
+    roadLight: '#111118',
+    lane: '#00f3ff', // Neon Cyan
+    grass: '#000000',
+    fog: '#050510'
+};
+
+// --- Game Engine Class ---
+class Game {
+    constructor(canvas, networkStats, onFinish) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: false });
+        this.width = canvas.width;
+        this.height = canvas.height;
+        this.stats = networkStats;
+        this.onFinish = onFinish;
+
+        // Game Settings based on Net Stats
+        this.maxSpeed = 8000 + (this.stats.download * 10); // Base speed
+        this.accel = 50 + (this.stats.upload / 20);
+        this.handling = 1.0 + (30 / Math.max(1, this.stats.ping)); // Lower ping = better handling
+        this.trackLength = 0;
+
+        // State
+        this.segments = [];
+        this.playerX = 0;
+        this.position = 0; // Distance traveled
+        this.speed = 0;
+        this.boost = 0;
+        this.isBoosting = false;
+        this.running = false;
+        this.finished = false;
+        this.startTime = 0;
+        this.shake = 0;
+
+        // Opponent
+        this.opponent = {
+            x: 0.5, // -1 to 1
+            z: 0, // Absolute position
+            speed: this.maxSpeed * 0.95 // Rubber banding target
+        };
+
+        // Inputs
+        this.keyLeft = false;
+        this.keyRight = false;
+        this.keyUp = false; // Boost
+
+        this.buildRoad();
+    }
+
+    // --- Road Generation ---
+    buildRoad() {
+        this.segments = [];
+        const totalSegments = 2000; 
+        
+        for (let i = 0; i < totalSegments; i++) {
+            const curve = (i > 50 && i < 300) ? 2 : (i > 500 && i < 800) ? -3 : (i > 1200 && i < 1500) ? 4 : 0;
+            const y = (i > 200 && i < 600) ? Math.sin(i / 30) * 1500 : 0; // Hills
+            
+            // Add Sprites
+            const sprites = [];
+            // Random obstacles
+            if (i > 50 && i % 20 === 0 && Math.random() < 0.4) {
+                // FIXED: Spawn in strict lanes (-1, 0, 1) instead of random spread
+                // Lanes are visually: Left(<-0.5), Center(-0.5 to 0.5), Right(>0.5)
+                // We position them at -1, 0, 1 to align with visual centers
+                const laneChoice = Math.floor(Math.random() * 3) - 1; // -1, 0, 1
+                const spriteX = laneChoice * 1.0; 
+                
+                const type = Math.random() > 0.7 ? 'COIN' : 'LOSS';
+                sprites.push({ x: spriteX, type: type });
+            }
+
+            this.segments.push({
+                index: i,
+                p1: { world: { y: y, z: i * SEGMENT_LENGTH }, camera: {}, screen: {} },
+                p2: { world: { y: y, z: (i + 1) * SEGMENT_LENGTH }, camera: {}, screen: {} },
+                curve: curve,
+                sprites: sprites,
+                color: Math.floor(i / 3) % 2 === 0 ? COLORS.roadDark : COLORS.roadLight
+            });
+        }
+        
+        this.trackLength = this.segments.length * SEGMENT_LENGTH;
+        // Goal line
+        this.segments[this.segments.length - 10].sprites.push({ x: 0, type: 'GOAL' });
+    }
+
+    // --- Main Loop ---
+    start() {
+        this.running = true;
+        this.startTime = Date.now();
+        this.lastTime = this.startTime;
+        this.loop();
+    }
+
+    loop() {
+        if (!this.running) return;
+        
+        const now = Date.now();
+        const dt = Math.min(1, (now - this.lastTime) / 1000);
+        this.lastTime = now;
+
+        this.update(dt, now);
+        this.render();
+
+        requestAnimationFrame(() => this.loop());
+    }
+
+    update(dt, now) {
+        if (this.finished) return;
+
+        // -- Inputs & Physics --
+        const max = this.isBoosting ? this.maxSpeed * 1.5 : this.maxSpeed;
+        
+        // Accelerate
+        if (this.speed < max) this.speed += this.accel;
+        else this.speed -= this.accel; // Drag
+
+        // Steer
+        const speedPercent = this.speed / this.maxSpeed;
+        const dx = dt * 2 * speedPercent * this.handling;
+        if (this.keyLeft) this.playerX -= dx;
+        if (this.keyRight) this.playerX += dx;
+
+        // Centering force (optional, makes it easier)
+        this.playerX -= (this.playerX * dt * 0.1); 
+
+        // Clamp Road
+        if (this.playerX < -2) this.playerX = -2;
+        if (this.playerX > 2) this.playerX = 2;
+
+        // Off-road penalty
+        if ((this.playerX < -1 || this.playerX > 1) && speedPercent > 0.2) {
+            this.speed -= this.accel * 3;
+            this.shake = 5;
+        }
+
+        // Move Forward
+        this.position += this.speed * dt;
+        if (this.position >= this.trackLength) this.finish();
+
+        // Boost Logic
+        if (this.isBoosting) {
+            this.boost -= dt * 50; // Drain
+            if (this.boost <= 0) {
+                this.boost = 0;
+                this.isBoosting = false;
+            }
+        } else {
+            if (this.boost < 100) this.boost += dt * 5; // Recharge slowly
+        }
+
+        if (this.keyUp && this.boost > 20) this.isBoosting = true;
+        if (!this.keyUp) this.isBoosting = false;
+
+        // -- Collision Detection --
+        const playerSegmentIndex = Math.floor(this.position / SEGMENT_LENGTH) % this.segments.length;
+        const playerSegment = this.segments[playerSegmentIndex];
+
+        for (let i = 0; i < playerSegment.sprites.length; i++) {
+            const sprite = playerSegment.sprites[i];
+            
+            // FIXED: Hitbox Tighter
+            // Previous: < 0.6 (Too wide, felt like being sucked in)
+            // New: < 0.35 (Strictly lane width)
+            // PlayerX range is -2 to 2. Lane centers are -1, 0, 1.
+            // Width of a lane visual is approx 0.7. Half is 0.35.
+            if (this.position > (playerSegmentIndex * SEGMENT_LENGTH) + 100) { 
+                if (Math.abs(this.playerX - sprite.x) < 0.35) {
+                    this.hitSprite(sprite, i);
+                    playerSegment.sprites.splice(i, 1); // Remove
+                    i--;
+                }
+            }
+        }
+
+        // -- Opponent Logic (Rubber Banding) --
+        const opDiff = this.opponent.z - this.position;
+        // If opponent is behind, speed up. If ahead, slow down.
+        if (opDiff < 0) this.opponent.speed = this.maxSpeed * 1.1; // Catch up
+        else if (opDiff > 2000) this.opponent.speed = this.maxSpeed * 0.8; // Wait
+        else this.opponent.speed = this.maxSpeed * 0.98; // Competitive
+        
+        this.opponent.z += this.opponent.speed * dt;
+        // Opponent AI steering (simple sine wave)
+        this.opponent.x = Math.sin(now / 1000) * 0.5;
+
+        // Screen Shake decay
+        if (this.shake > 0) this.shake -= dt * 20;
+    }
+
+    hitSprite(sprite, index) {
+        if (sprite.type === 'LOSS') {
+            this.speed *= 0.6; // Heavy penalty
+            this.shake = 20;
+            ui.showMessage("PACKET LOSS!", "loss");
+            // Flash red
+            this.ctx.fillStyle = 'rgba(255,0,0,0.5)';
+            this.ctx.fillRect(0,0,this.width,this.height);
+        } else if (sprite.type === 'COIN') {
+            this.boost = Math.min(100, this.boost + 25);
+            ui.showMessage("BANDWIDTH UP", "go");
+        }
+    }
+
+    finish() {
+        this.finished = true;
+        this.running = false;
+        const rank = this.position >= this.opponent.z ? 1 : 2;
+        const time = Date.now() - this.startTime;
+        this.onFinish({ rank, time, speed: Math.floor(this.speed / 100) });
+    }
+
+    // --- Rendering (The Magic) ---
+    render() {
+        const ctx = this.ctx;
+        const w = this.width;
+        const h = this.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Shake offset
+        const sx = (Math.random() - 0.5) * this.shake;
+        const sy = (Math.random() - 0.5) * this.shake;
+
+        // Sky (Static for now, could be gradient)
+        ctx.fillStyle = COLORS.sky;
+        ctx.fillRect(0, 0, w, h);
+
+        // Render Segments
+        const baseSegment = this.segments[Math.floor(this.position / SEGMENT_LENGTH) % this.segments.length];
+        const basePercent = (this.position % SEGMENT_LENGTH) / SEGMENT_LENGTH;
+        
+        // --- FIXED: Camera Height Calculation ---
+        // Calculate player Y on the road surface
+        const playerY = baseSegment.p1.world.y + (baseSegment.p2.world.y - baseSegment.p1.world.y) * basePercent;
+        // Camera follows player height + offset
+        const cameraY = playerY + CAMERA_HEIGHT;
+
+        let dx = -(baseSegment.curve * basePercent);
+        let x = 0;
+        let maxY = h; // Clip buffer
+
+        // Draw from near to far
+        for (let n = 0; n < RENDER_DISTANCE; n++) {
+            const segment = this.segments[(baseSegment.index + n) % this.segments.length];
+            const looped = segment.index < baseSegment.index;
+            
+            // 3D Projection
+            segment.p1.camera.z = (n * SEGMENT_LENGTH) - (basePercent * SEGMENT_LENGTH);
+            // FIXED: Y relative to cameraY
+            segment.p1.camera.y = segment.p1.world.y - cameraY; 
+            segment.p1.camera.x = -this.playerX * ROAD_WIDTH - x;
+
+            // Apply projection
+            this.project(segment.p1, w, h);
+
+            // Calculate P2 (end of segment)
+            x += dx;
+            dx += segment.curve;
+
+            segment.p2.camera.z = segment.p1.camera.z + SEGMENT_LENGTH;
+            segment.p2.camera.y = segment.p2.world.y - cameraY; // FIXED
+            segment.p2.camera.x = segment.p1.camera.x - dx;
+
+            this.project(segment.p2, w, h);
+
+            // Clip
+            if (segment.p1.camera.z <= CAMERA_DEPTH || segment.p2.screen.y >= maxY || segment.p2.screen.y >= segment.p1.screen.y) {
+                continue;
+            }
+
+            // Draw Segment
+            this.drawSegment(ctx, w, h, segment, sx, sy);
+            maxY = segment.p2.screen.y;
+        }
+
+        // Draw Sprites (Back to Front)
+        for (let n = RENDER_DISTANCE - 1; n > 0; n--) {
+            const segment = this.segments[(baseSegment.index + n) % this.segments.length];
+            
+            // Opponent
+            // Check if opponent is in this segment
+            const opSegIndex = Math.floor(this.opponent.z / SEGMENT_LENGTH);
+            if (opSegIndex === segment.index) {
+                this.drawSprite(ctx, w, h, segment, { type: 'CAR_OPP', x: this.opponent.x }, sx, sy);
+            }
+
+            for (let i = 0; i < segment.sprites.length; i++) {
+                this.drawSprite(ctx, w, h, segment, segment.sprites[i], sx, sy);
+            }
+        }
+
+        // Draw Player Car (Always at bottom center)
+        this.drawPlayer(ctx, w, h, sx, sy);
+
+        // Update UI info
+        ui.updateGame(this.speed, this.position, this.trackLength, this.boost, this.position >= this.opponent.z);
+    }
+
+    project(p, w, h) {
+        const scale = CAMERA_DEPTH / p.camera.z;
+        p.screen.scale = scale;
+        p.screen.x = Math.round((w / 2) + (scale * p.camera.x * w / 2));
+        p.screen.y = Math.round((h / 2) - (scale * p.camera.y * h / 2));
+        p.screen.w = Math.round(scale * ROAD_WIDTH * w / 2);
+    }
+
+    drawSegment(ctx, w, h, segment, sx, sy) {
+        const x1 = segment.p1.screen.x + sx;
+        const y1 = segment.p1.screen.y + sy;
+        const w1 = segment.p1.screen.w;
+        const x2 = segment.p2.screen.x + sx;
+        const y2 = segment.p2.screen.y + sy;
+        const w2 = segment.p2.screen.w;
+
+        // Grass/Background
+        ctx.fillStyle = COLORS.grass;
+        ctx.fillRect(0, y2, w, y1 - y2);
+
+        // Road
+        // Make road slightly brighter in distance to simulate atmospheric perspective? No, dark mode.
+        // Lane guides
+        const isDark = (Math.floor(segment.index / 3) % 2 === 0);
+        
+        // Base Road
+        ctx.fillStyle = isDark ? COLORS.roadDark : COLORS.roadLight;
+        ctx.beginPath();
+        ctx.moveTo(x1 - w1, y1);
+        ctx.lineTo(x2 - w2, y2);
+        ctx.lineTo(x2 + w2, y2);
+        ctx.lineTo(x1 + w1, y1);
+        ctx.fill();
+
+        // 3-Lane Markers
+        // We want to visually separate the 3 lanes (-1, 0, 1)
+        // Lane width is roughly w * 0.66?
+        // Let's draw dividers at -0.5 and 0.5
+        
+        if (isDark) {
+            ctx.fillStyle = 'rgba(0, 243, 255, 0.2)'; // Faint guide
+            const guideW1 = w1 * 0.02;
+            const guideW2 = w2 * 0.02;
+            [-0.5, 0.5].forEach(l => {
+                const lx1 = x1 + w1 * l;
+                const lx2 = x2 + w2 * l;
+                ctx.beginPath();
+                ctx.moveTo(lx1 - guideW1, y1);
+                ctx.lineTo(lx2 - guideW2, y2);
+                ctx.lineTo(lx2 + guideW2, y2);
+                ctx.lineTo(lx1 + guideW1, y1);
+                ctx.fill();
+            });
+        }
+        
+        // Edge glow
+        ctx.strokeStyle = COLORS.lane;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x1 - w1, y1);
+        ctx.lineTo(x2 - w2, y2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x1 + w1, y1);
+        ctx.lineTo(x2 + w2, y2);
+        ctx.stroke();
+    }
+
+    drawSprite(ctx, w, h, segment, sprite, sx, sy) {
+        // Sprite positioning
+        const scale = segment.p1.screen.scale;
+        const destX = segment.p1.screen.x + (scale * sprite.x * ROAD_WIDTH * w / 2) + sx;
+        const destY = segment.p1.screen.y + sy;
+
+        // Size
+        const spriteScale = scale * w * 1.5; // Base size multiplier
+
+        ctx.save();
+        ctx.translate(destX, destY);
+        
+        // Draw Shadow
+        const s = (sprite.type === 'CAR_OPP' ? 2500 : 1000) * scale;
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s/1.5, s/4, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        if (sprite.type === 'LOSS') {
+            // RED PACKET LOSS BOX
+            // Reverted to "LOSS" box but kept 3D solidity
+            const boxS = 900 * scale; 
+            
+            // Main Cube Body
+            ctx.fillStyle = '#ff0055';
+            ctx.fillRect(-boxS, -boxS*2, boxS*2, boxS*2);
+            
+            // 3D Top Face effect
+            ctx.fillStyle = '#ff5588';
+            ctx.beginPath();
+            ctx.moveTo(-boxS, -boxS*2);
+            ctx.lineTo(boxS, -boxS*2);
+            ctx.lineTo(boxS*0.8, -boxS*2.3);
+            ctx.lineTo(-boxS*0.8, -boxS*2.3);
+            ctx.fill();
+
+            // Border/Frame
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-boxS, -boxS*2, boxS*2, boxS*2);
+            
+            // X mark or "LOSS" text
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            
+            // "LOSS" Text
+            ctx.font = `bold ${Math.max(10, boxS/1.5)}px monospace`;
+            ctx.fillText("LOSS", 0, -boxS - (boxS * 0.2));
+            
+            // "404" or similar error code for flavor
+            ctx.font = `${Math.max(8, boxS/3)}px monospace`;
+            ctx.fillText("ERROR", 0, -boxS + (boxS * 0.5));
+
+        } else if (sprite.type === 'COIN') {
+            // DATA PACKET (Blue Crystal)
+            const s = 800 * scale;
+            
+            // Glow
+            ctx.shadowColor = '#00f3ff';
+            ctx.shadowBlur = 20;
+            
+            // Diamond Shape
+            ctx.fillStyle = '#00f3ff';
+            ctx.beginPath();
+            ctx.moveTo(0, -s);      // Top
+            ctx.lineTo(s/1.5, -s/2); // Right
+            ctx.lineTo(0, 0);       // Bottom
+            ctx.lineTo(-s/1.5, -s/2);// Left
+            ctx.closePath();
+            ctx.fill();
+            
+            // Inner White
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.moveTo(0, -s*0.8);
+            ctx.lineTo(s/3, -s/2);
+            ctx.lineTo(0, -s*0.2);
+            ctx.lineTo(-s/3, -s/2);
+            ctx.fill();
+            
+            ctx.shadowBlur = 0; // Reset
+
+        } else if (sprite.type === 'CAR_OPP') {
+            // Opponent Car (Red)
+            const s = 2500 * scale;
+            ctx.fillStyle = '#ff0055';
+            ctx.shadowColor = '#fff';
+            // Simple Trapezoid
+            ctx.beginPath();
+            ctx.moveTo(-s/2, 0);
+            ctx.lineTo(s/2, 0);
+            ctx.lineTo(s/3, -s/2);
+            ctx.lineTo(-s/3, -s/2);
+            ctx.fill();
+        } else if (sprite.type === 'GOAL') {
+            // Goal Banner
+            const gw = segment.p1.screen.w * 2;
+            const gh = 3000 * scale;
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx.fillRect(-gw/2, -gh*3, gw, gh);
+            ctx.fillStyle = '#fff';
+            ctx.textAlign = 'center';
+            ctx.font = `bold ${gh}px monospace`;
+            ctx.fillText("GATEWAY", 0, -gh*2);
+        }
+
+        ctx.restore();
+    }
+
+    drawPlayer(ctx, w, h, sx, sy) {
+        // Player is fixed at bottom center + vibration
+        const s = w * 0.15; // Size relative to screen width
+        const carY = h - 50 + sy;
+        const carX = w / 2 + sx;
+
+        ctx.save();
+        ctx.translate(carX, carY);
+        
+        // Player Shadow for Lane Position Clarity
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s/1.5, s/6, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        // Boost Effect (FOV warp visualized as lines?)
+        if (this.isBoosting) {
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-s, 0); ctx.lineTo(-s*1.5, s);
+            ctx.moveTo(s, 0); ctx.lineTo(s*1.5, s);
+            ctx.stroke();
+        }
+
+        // Car Body (Green/Neon)
+        ctx.fillStyle = this.isBoosting ? '#fff' : '#0aff0a';
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#0aff0a';
+        
+        ctx.beginPath();
+        ctx.moveTo(-s/2, 0);
+        ctx.lineTo(s/2, 0);
+        ctx.lineTo(s/2.5, -s/3);
+        ctx.lineTo(-s/2.5, -s/3);
+        ctx.fill();
+
+        // Tail lights
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(-s/3, -s/6, s/6, s/10);
+        ctx.fillRect(s/6, -s/6, s/6, s/10);
+
+        ctx.restore();
+    }
+}
+
+// --- UI Controller ---
+const ui = {
+    els: {
+        speed: document.getElementById('uiSpeed'),
+        dist: document.getElementById('uiDist'),
+        boost: document.getElementById('uiBoost'),
+        rank: document.getElementById('uiRank'),
+        oppDist: document.getElementById('uiOppDist'),
+        msg: document.getElementById('msgBox')
+    },
+    updateGame: (speed, dist, total, boost, isLeading) => {
+        ui.els.speed.innerText = Math.floor(speed / 100);
+        ui.els.dist.innerText = Math.floor(dist / 100);
+        ui.els.boost.style.width = boost + '%';
+        
+        if(isLeading) {
+            ui.els.rank.innerText = "1st";
+            ui.els.rank.className = "rank-badge rank-1";
+        } else {
+            ui.els.rank.innerText = "2nd";
+            ui.els.rank.className = "rank-badge rank-2";
+        }
+    },
+    showMessage: (text, type) => {
+        ui.els.msg.innerText = text;
+        ui.els.msg.className = "center-msg msg-" + type;
+        ui.els.msg.style.opacity = 1;
+        ui.els.msg.style.transform = "scale(1.2)";
+        setTimeout(() => {
+            ui.els.msg.style.opacity = 0;
+            ui.els.msg.style.transform = "scale(1)";
+        }, 500);
+    }
+};
+
+// --- App Controller ---
+const app = {
+    canvas: document.getElementById('canvas'),
+    game: null,
+    
+    init: () => {
+        app.resize();
+        window.addEventListener('resize', app.resize);
+        // Mobile Controls
+        if ('ontouchstart' in window) {
+            const mc = document.getElementById('mobile-controls');
+            mc.style.display = 'block';
+            
+            // Events
+            const bindBtn = (id, key) => {
+                const el = document.getElementById(id);
+                el.addEventListener('touchstart', (e) => { e.preventDefault(); if(app.game) app.game[key] = true; });
+                el.addEventListener('touchend', (e) => { e.preventDefault(); if(app.game) app.game[key] = false; });
+            };
+            bindBtn('btnLeft', 'keyLeft');
+            bindBtn('btnRight', 'keyRight');
+            bindBtn('btnBoost', 'keyUp');
+        }
+
+        // Keyboard
+        window.addEventListener('keydown', e => {
+            if(!app.game) return;
+            if (e.key === 'ArrowLeft') app.game.keyLeft = true;
+            if (e.key === 'ArrowRight') app.game.keyRight = true;
+            if (e.code === 'Space' || e.key === 'ArrowUp') app.game.keyUp = true;
+        });
+        window.addEventListener('keyup', e => {
+            if(!app.game) return;
+            if (e.key === 'ArrowLeft') app.game.keyLeft = false;
+            if (e.key === 'ArrowRight') app.game.keyRight = false;
+            if (e.code === 'Space' || e.key === 'ArrowUp') app.game.keyUp = false;
+        });
+    },
+
+    resize: () => {
+        app.canvas.width = window.innerWidth;
+        app.canvas.height = window.innerHeight;
+    },
+
+    initScan: (highSpeed) => {
+        document.getElementById('titleScreen').classList.add('hidden');
+        document.getElementById('scanScreen').classList.remove('hidden');
+        
+        // Sim Scan
+        let p = 0;
+        const interval = setInterval(() => {
+            p += 2;
+            const ping = highSpeed ? Math.floor(Math.random()*10+5) : Math.floor(Math.random()*50+50);
+            const down = highSpeed ? Math.floor(Math.random()*200+800) : Math.floor(Math.random()*30+10);
+            const up = highSpeed ? Math.floor(Math.random()*100+500) : Math.floor(Math.random()*10+5);
+            
+            document.getElementById('valPing').innerText = ping + ' ms';
+            document.getElementById('valDown').innerText = down + ' Mbps';
+            document.getElementById('valUp').innerText = up + ' Mbps';
+            
+            document.getElementById('barPing').style.width = p + '%';
+            document.getElementById('barDown').style.width = p + '%';
+            document.getElementById('barUp').style.width = p + '%';
+
+            if (p >= 100) {
+                clearInterval(interval);
+                setTimeout(() => app.startGame({ ping, download: down, upload: up }), 500);
+            }
+        }, 30);
+    },
+
+    startGame: (stats) => {
+        document.getElementById('scanScreen').classList.add('hidden');
+        document.getElementById('gameUI').classList.remove('hidden');
+        
+        app.game = new Game(app.canvas, stats, app.showResult);
+        
+        // Count down?
+        ui.showMessage("3", "go");
+        setTimeout(() => ui.showMessage("2", "go"), 1000);
+        setTimeout(() => ui.showMessage("1", "go"), 2000);
+        setTimeout(() => {
+            ui.showMessage("START!", "go");
+            app.game.start();
+        }, 3000);
+    },
+
+    showResult: (res) => {
+        document.getElementById('gameUI').classList.add('hidden');
+        document.getElementById('resultScreen').classList.remove('hidden');
+        
+        const title = document.getElementById('resTitle');
+        const rank = document.getElementById('resRankText');
+        
+        if(res.rank === 1) {
+            title.innerText = "PACKET DELIVERED";
+            title.style.color = "var(--neon-green)";
+            rank.innerText = "RANK: 1st";
+        } else {
+            title.innerText = "TIMED OUT";
+            title.style.color = "var(--neon-red)";
+            rank.innerText = "RANK: 2nd";
+        }
+        
+        document.getElementById('resTime').innerText = (res.time / 1000).toFixed(2) + "s";
+        document.getElementById('resSpeed').innerText = res.speed + " Mbps";
+    }
+};
+
+app.init();
+
+</script>
+</body>
+</html>
